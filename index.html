@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dam Inundation – Submerged State, District &amp; Village Finder</title>
+<style>
+:root{--bg:#f3f6f9;--card:#fff;--ink:#16324f;--mut:#5b6b7b;--acc:#0b6bcb;--line:#d9e2ec}
+*{box-sizing:border-box}
+body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--ink);color:#fff;padding:18px 24px}
+header h1{margin:0;font-size:22px}
+header p{margin:4px 0 0;color:#b8c9db;font-size:14px}
+main{max-width:900px;margin:20px auto;padding:0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+.steps{margin:0 0 14px;padding-left:20px;color:var(--mut);font-size:14px;line-height:1.7}
+.drop{display:block;border:2px dashed var(--acc);border-radius:10px;padding:30px;text-align:center;cursor:pointer;color:var(--acc);font-size:17px}
+.drop.over,.drop:hover{background:#eaf3fd}
+.drop small{display:block;color:var(--mut);margin-top:6px;font-size:13px}
+input[type=file]{display:none}
+#status{margin-top:12px;font-size:15px}
+.err{color:#b3261e;font-weight:600}.ok{color:#1b7a3a}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+table{border-collapse:collapse;width:100%;font-size:15px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left}
+th{background:#e8eef5}
+td.n,th.n{text-align:right}
+tfoot td{font-weight:700;background:#f6f9fc}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:7px}
+button{background:var(--acc);color:#fff;border:0;border-radius:6px;padding:9px 16px;font-size:15px;cursor:pointer;margin:12px 8px 0 0}
+canvas{width:100%;max-height:420px;border:1px solid var(--line);border-radius:6px;background:#fafcfe}
+.note{font-size:13px;color:var(--mut);line-height:1.6}
+input[type=search]{padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px;width:260px;max-width:100%}
+.scroll{max-height:560px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:10px}
+.scroll table{font-size:14px}.scroll th{position:sticky;top:0;z-index:1}
+.sum{display:flex;gap:12px;flex-wrap:wrap;margin:6px 0 4px}
+.sum div{background:#f6f9fc;border:1px solid var(--line);border-radius:8px;padding:8px 14px;font-size:13px;color:var(--mut)}
+.sum b{display:block;font-size:20px;color:var(--ink)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dam Inundation – Submerged State, District &amp; Village Finder</h1>
+  <p>For Emergency Action Plan (EAP) preparation</p>
+</header>
+<main>
+  <section class="card">
+    <ol class="steps">
+      <li>Click the box below and choose your inundation map (GeoTIFF).</li>
+      <li>Wait for the result tables to appear (State/District table first, then the Village table).</li>
+      <li>Download the tables as CSV (opens in Excel) and use them in the EAP.</li>
+    </ol>
+    <label class="drop" id="drop">
+      <input type="file" id="tif" accept=".tif,.tiff,.TIF,.TIFF">
+      <b>Click here to choose the inundation TIFF</b>
+      <small>or drag and drop the file here</small>
+    </label>
+    <div id="status"></div>
+    <div class="bar" id="barwrap" hidden><i id="bar"></i></div>
+  </section>
+
+  <section class="card" id="result" hidden>
+    <h2 style="margin-top:0;font-size:18px">States and Districts getting submerged</h2>
+    <table>
+      <thead><tr><th>Sr. No.</th><th>State</th><th>District</th><th class="n">Inundated Area (sq km)</th><th class="n">Share of Total (%)</th></tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot id="foot"></tfoot>
+    </table>
+    <button id="csv">Download table (CSV)</button>
+    <p class="note" id="notes"></p>
+    <h3 style="font-size:15px;margin-bottom:8px">Quick preview (inundated area, coloured by State)</h3>
+    <canvas id="map" width="800" height="500"></canvas>
+  </section>
+
+  <section class="card" id="vresult" hidden>
+    <h2 style="margin-top:0;font-size:18px">Villages getting inundated</h2>
+    <div class="sum" id="vsum"></div>
+    <input type="search" id="vfilter" placeholder="Filter by village, block, district or state...">
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Sr. No.</th><th>State</th><th>District</th><th>Block / Sub-district</th><th>Village</th><th>Village Code</th><th class="n">Inundated Area (ha)</th><th class="n">% of Village Area</th><th class="n">Households (Census)</th><th class="n">Population (Census)</th></tr></thead>
+        <tbody id="vrows"></tbody>
+      </table>
+    </div>
+    <button id="vcsv">Download village table (CSV)</button>
+    <p class="note" id="vnotes"></p>
+  </section>
+
+  <p class="note">How it works: every submerged pixel (value greater than 0) in the TIFF is checked against the District boundary, and the State comes from the District. Villages are then identified from the Survey of India village boundaries (only the State files that the inundation touches are loaded). Only the TIFF is needed; the boundaries are loaded automatically from the <code>data</code> folder.</p>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/geotiff@2.1.3/dist-browser/geotiff.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.9.2/dist/proj4.js"></script>
+<script>
+const STATE_URL = 'data/State_Boundary.geojson';
+const DISTRICT_URL = 'data/District_Boundary.geojson';
+const VILLAGE_DIR = 'data/villages/';   // index.json + one compact file per State (made by prepare_villages.js)
+const COLORS = ['#e6194b','#3cb44b','#4363d8','#f58231','#911eb4','#008080','#9a6324','#800000','#808000','#000075','#f032e6','#469990'];
+const $ = id => document.getElementById(id);
+const tick = () => new Promise(r => setTimeout(r));
+let statesPromise = null, lastRows = [], lastVRows = [], vIndexPromise = null;
+const vCache = {};
+
+/* ---------- Boundary layers (fast point-in-polygon index, built only when needed) ---------- */
+function buildLayer(gj, info) {
+  // Some files store coordinates as [lat, lon]; detect and swap.
+  const c0 = gj.features[0].geometry.coordinates.flat(3);
+  const swap = c0[0] < 40 && c0[1] > 60;
+  return gj.features.map(f => {
+    const polys = f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates;
+    let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+    for (const poly of polys) for (const p of poly[0]) {
+      const x = swap ? p[1] : p[0], y = swap ? p[0] : p[1];
+      if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y;
+    }
+    return Object.assign(info(f.properties), { polys, swap, minx, miny, maxx, maxy, start: null });
+  });
+}
+function prepare(s) {
+  const edges = [];
+  for (const poly of s.polys) for (const ring of poly) {
+    for (let i = 0; i < ring.length - 1; i++) {
+      const a = ring[i], b = ring[i + 1];
+      const x1 = s.swap ? a[1] : a[0], y1 = s.swap ? a[0] : a[1];
+      const x2 = s.swap ? b[1] : b[0], y2 = s.swap ? b[0] : b[1];
+      if (y1 !== y2) edges.push(x1, y1, x2, y2);
+    }
+  }
+  const NB = 256, h = (s.maxy - s.miny) / NB || 1, ne = edges.length / 4;
+  const start = new Int32Array(NB + 2);
+  const span = e => [Math.max(0, Math.floor((Math.min(edges[4*e+1], edges[4*e+3]) - s.miny) / h)),
+                     Math.min(NB - 1, Math.floor((Math.max(edges[4*e+1], edges[4*e+3]) - s.miny) / h))];
+  for (let e = 0; e < ne; e++) { const [a, b] = span(e); for (let k = a; k <= b; k++) start[k + 1]++; }
+  for (let k = 0; k < NB; k++) start[k + 1] += start[k];
+  const fill = start.slice(), idx = new Int32Array(start[NB]);
+  for (let e = 0; e < ne; e++) { const [a, b] = span(e); for (let k = a; k <= b; k++) idx[fill[k]++] = e; }
+  Object.assign(s, { h, NB, start, idx, edges: Float64Array.from(edges), polys: null });
+}
+function inState(s, x, y) {
+  if (x < s.minx || x > s.maxx || y < s.miny || y > s.maxy) return false;
+  if (!s.start) prepare(s);
+  const b = Math.min(s.NB - 1, Math.floor((y - s.miny) / s.h)), E = s.edges;
+  let inside = false;
+  for (let k = s.start[b]; k < s.start[b + 1]; k++) {
+    const e = 4 * s.idx[k], y1 = E[e + 1], y2 = E[e + 3];
+    if ((y1 > y) !== (y2 > y)) {
+      const xi = E[e] + (y - y1) * (E[e + 2] - E[e]) / (y2 - y1);
+      if (xi > x) inside = !inside;
+    }
+  }
+  return inside;
+}
+function getJSON(url) {
+  return fetch(url).then(r => {
+    if (!r.ok) throw new Error('Boundary file not found at ' + url);
+    return r.json();
+  });
+}
+function loadLayers() {
+  if (!statesPromise) statesPromise = Promise.all([getJSON(STATE_URL), getJSON(DISTRICT_URL)]).then(([s, d]) => ({
+    states: buildLayer(s, p => ({ name: p.name || p.State })),
+    districts: buildLayer(d, p => ({ name: p.district, state: p.state }))
+  }));
+  return statesPromise;
+}
+
+/* ---------- Coordinate system of the TIFF ---------- */
+function projDef(img, ox, oy, rx) {
+  const k = img.getGeoKeys() || {};
+  const epsg = k.ProjectedCSTypeGeoKey || k.GeographicTypeGeoKey;
+  if (!epsg || epsg === 32767) {
+    if (Math.abs(ox) <= 180 && Math.abs(oy) <= 90 && Math.abs(rx) < 1) return null;   // looks like lat/lon
+    throw new Error('Coordinate system of the TIFF is not recorded. Please export it again with a coordinate system (WGS84 or UTM).');
+  }
+  if (epsg === 4326 || epsg === 4269 || epsg === 4979) return null;
+  if (epsg >= 32601 && epsg <= 32660) return `+proj=utm +zone=${epsg - 32600} +datum=WGS84 +units=m +no_defs`;
+  if (epsg >= 32701 && epsg <= 32760) return `+proj=utm +zone=${epsg - 32700} +south +datum=WGS84 +units=m +no_defs`;
+  if (epsg === 3857) return '+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +no_defs';
+  if (epsg === 7755) return '+proj=lcc +lat_0=24 +lon_0=80 +lat_1=12.472955 +lat_2=35.172805 +x_0=4000000 +y_0=4000000 +datum=WGS84 +units=m +no_defs';   // WGS 84 / India NSF LCC
+  throw new Error('Coordinate system EPSG:' + epsg + ' is not supported yet. Please save the TIFF in WGS84 (EPSG:4326) or WGS84 UTM.');
+}
+
+
+/* ---------- Village layers (loaded only for the States the inundation touches) ---------- */
+function loadVillageIndex() {
+  if (!vIndexPromise) vIndexPromise = getJSON(VILLAGE_DIR + 'index.json').catch(() => null);
+  return vIndexPromise;
+}
+function loadVillageState(st, q) {
+  if (!vCache[st.code]) vCache[st.code] = getJSON(VILLAGE_DIR + st.file).then(d => buildVillageState(d, q, st));
+  return vCache[st.code];
+}
+function buildVillageState(d, q, st) {
+  const CELL = 0.05, grid = new Map();
+  const vs = d.v.map(r => ({ name: r[0], code: r[1], di: r[2], bi: r[3], pop: r[4], hh: r[5], area: r[6], g: r[8], e: null }));
+  d.v.forEach((r, i) => {
+    const b = r[7], x0 = Math.floor(b[0] / q / CELL), x1 = Math.floor(b[2] / q / CELL), y0 = Math.floor(b[1] / q / CELL), y1 = Math.floor(b[3] / q / CELL);
+    vs[i].bb = [b[0] / q, b[1] / q, b[2] / q, b[3] / q];
+    for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) {
+      const k = x * 100000 + y; let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(i);
+    }
+  });
+  return { st, q, CELL, grid, vs, d };
+}
+function villageEdges(v, q) {          // decode delta-encoded rings once, on first use
+  const out = [];
+  for (const poly of v.g) for (const r of poly) {
+    let x = 0, y = 0; const n = r.length / 2, xs = new Float64Array(n), ys = new Float64Array(n);
+    for (let i = 0; i < n; i++) { x = i ? x + r[2 * i] : r[0]; y = i ? y + r[2 * i + 1] : r[1]; xs[i] = x / q; ys[i] = y / q; }
+    out.push([xs, ys]);
+  }
+  v.e = out; v.g = null; return out;
+}
+function inVillage(L, v, x, y) {
+  if (x < v.bb[0] || x > v.bb[2] || y < v.bb[1] || y > v.bb[3]) return false;
+  const rings = v.e || villageEdges(v, L.q);
+  let inside = false;                  // even-odd over all rings (handles holes)
+  for (const [xs, ys] of rings) {
+    for (let i = 0, j = xs.length - 1; i < xs.length; j = i++) {
+      if ((ys[i] > y) !== (ys[j] > y) && x < (xs[j] - xs[i]) * (y - ys[i]) / (ys[j] - ys[i]) + xs[i]) inside = !inside;
+    }
+  }
+  return inside;
+}
+function findVillage(L, x, y, last) {
+  if (last && inVillage(L, last, x, y)) return last;
+  const c = L.grid.get(Math.floor(x / L.CELL) * 100000 + Math.floor(y / L.CELL));
+  if (c) for (const i of c) if (L.vs[i] !== last && inVillage(L, L.vs[i], x, y)) return L.vs[i];
+  return null;
+}
+
+/* ---------- Main analysis ---------- */
+async function analyse(file) {
+  const status = $('status'), bar = $('bar');
+  $('result').hidden = true; $('vresult').hidden = true; $('barwrap').hidden = false; bar.style.width = '2%';
+  status.className = ''; status.textContent = 'Loading State and District boundaries...';
+  const { states, districts } = await loadLayers();
+
+  status.textContent = 'Reading the TIFF...';
+  const tiff = await GeoTIFF.fromBlob(file), img = await tiff.getImage();
+  const W = img.getWidth(), H = img.getHeight();
+  let ox, oy, rx, ry;
+  try { [ox, oy] = img.getOrigin(); [rx, ry] = img.getResolution(); }
+  catch (e) { throw new Error('This TIFF has no map location (not a GeoTIFF).'); }
+  const def = projDef(img, ox, oy, rx);
+  const conv = def ? proj4(def, 'EPSG:4326') : null;
+  const nodata = img.getGDALNoData();
+
+  // Work in blocks of B x B pixels so very large TIFFs stay fast.
+  const B = Math.max(1, Math.ceil(Math.sqrt(W * H / 1e6)));
+  const bw = Math.ceil(W / B), bh = Math.ceil(H / B);
+  const counts = new Uint32Array(bw * bh);
+  const rowsPerStrip = B * Math.max(1, Math.floor(2e6 / W / B));
+  let wetTotal = 0;
+  for (let y0 = 0; y0 < H; y0 += rowsPerStrip) {
+    const y1 = Math.min(H, y0 + rowsPerStrip);
+    const band = (await img.readRasters({ window: [0, y0, W, y1], samples: [0] }))[0];
+    for (let y = y0; y < y1; y++) {
+      const rowOff = (y - y0) * W, brow = Math.floor(y / B) * bw;
+      for (let x = 0; x < W; x++) {
+        const v = band[rowOff + x];
+        if (v > 0 && v !== nodata && isFinite(v)) { counts[brow + Math.floor(x / B)]++; wetTotal++; }
+      }
+    }
+    bar.style.width = (5 + 55 * y1 / H) + '%';
+    status.textContent = 'Reading the TIFF... ' + Math.round(100 * y1 / H) + '%';
+    await tick();
+  }
+  if (!wetTotal) throw new Error('No inundated pixels (value > 0) were found in this TIFF.');
+
+  // Find the District (and State) of every inundated block.
+  status.textContent = 'Finding Districts and States...';
+  const area = new Map();            // "State|District" -> m2
+  const stateIdx = new Map(states.map((s, i) => [s.name, i]));
+  const pts = [];
+  let lastD = -1, lastS = -1;
+  const wetBlocks = [];
+  for (let i = 0; i < counts.length; i++) if (counts[i]) wetBlocks.push(i);
+  const bLon = new Float64Array(wetBlocks.length), bLat = new Float64Array(wetBlocks.length), bPix = new Float64Array(wetBlocks.length);
+  const keep = Math.max(1, Math.ceil(wetBlocks.length / 40000));
+  for (let n = 0; n < wetBlocks.length; n++) {
+    const i = wetBlocks[n], bx = i % bw, by = (i - bx) / bw;
+    let X = ox + (bx * B + B / 2) * rx, Y = oy + (by * B + B / 2) * ry, lon = X, lat = Y, pixM2;
+    if (conv) { [lon, lat] = conv.forward([X, Y]); pixM2 = Math.abs(rx * ry); }
+    else pixM2 = Math.abs(rx * ry) * 111320 * 111320 * Math.cos(lat * Math.PI / 180);
+    let d = -1;
+    if (lastD >= 0 && inState(districts[lastD], lon, lat)) d = lastD;
+    else for (let j = 0; j < districts.length; j++) if (inState(districts[j], lon, lat)) { d = j; break; }
+    let sName, dName, sIdx = -1;
+    if (d >= 0) { lastD = d; sName = districts[d].state; dName = districts[d].name; sIdx = stateIdx.get(sName) ?? -1; }
+    else {   // fallback: only the State boundary matches
+      let s = -1;
+      if (lastS >= 0 && inState(states[lastS], lon, lat)) s = lastS;
+      else for (let j = 0; j < states.length; j++) if (inState(states[j], lon, lat)) { s = j; break; }
+      if (s >= 0) { lastS = s; sName = states[s].name; dName = '(District not identified)'; sIdx = s; }
+      else { sName = ''; dName = ''; }
+    }
+    bLon[n] = lon; bLat[n] = lat; bPix[n] = counts[i] * pixM2;
+    const key = sName + '|' + dName;
+    area.set(key, (area.get(key) || 0) + counts[i] * pixM2);
+    if (n % keep === 0) pts.push([lon, lat, sIdx]);
+    if (n % 20000 === 0) { bar.style.width = (60 + 38 * n / wetBlocks.length) + '%'; await tick(); }
+  }
+  bar.style.width = '100%';
+
+  // ---- Villages ----
+  let villages = null;
+  try {
+    status.textContent = 'Finding villages...';
+    const vidx = await loadVillageIndex();
+    if (!vidx) throw new Error('index missing');
+    const need = new Set();
+    for (let n = 0; n < bLon.length; n++) for (const st of vidx.states) {
+      const b = st.bbox; if (bLon[n] >= b[0] && bLon[n] <= b[2] && bLat[n] >= b[1] && bLat[n] <= b[3]) need.add(st);
+    }
+    const layers = [];
+    let k = 0;
+    for (const st of need) {
+      status.textContent = 'Loading village boundaries: ' + st.state + ' (' + (++k) + '/' + need.size + ', ' + (st.size / 1e6).toFixed(1) + ' MB)...';
+      layers.push(await loadVillageState(st, vidx.q)); await tick();
+    }
+    status.textContent = 'Matching inundated area to villages...';
+    const vArea = new Map(); let vOut = 0, last = null, lastL = null;
+    for (let n = 0; n < bLon.length; n++) {
+      let v = null, L = null;
+      if (last && inVillage(lastL, last, bLon[n], bLat[n])) { v = last; L = lastL; }
+      else for (const l of layers) { v = findVillage(l, bLon[n], bLat[n], null); if (v) { L = l; break; } }
+      if (v) { last = v; lastL = L; let r = vArea.get(v); if (!r) vArea.set(v, r = { v, L, m2: 0 }); r.m2 += bPix[n]; }
+      else vOut += bPix[n];
+      if (n % 20000 === 0) { bar.style.width = (98 + 2 * n / bLon.length) + '%'; await tick(); }
+    }
+    villages = { list: [...vArea.values()], outside: vOut, loaded: [...need].map(s => s.state) };
+  } catch (e) { villages = { error: e.message || String(e) }; }
+  return { area, pts, B, stateIdx, villages };
+}
+
+/* ---------- Show results ---------- */
+function show({ area, pts, B, stateIdx, villages }) {
+  let total = 0, outside = 0;
+  const rows = [];
+  area.forEach((m2, key) => {
+    total += m2;
+    const [st, di] = key.split('|');
+    if (!st) outside += m2; else rows.push({ st, di, km2: m2 / 1e6 });
+  });
+  rows.sort((a, b) => a.st.localeCompare(b.st) || b.km2 - a.km2);
+  const inside = rows.reduce((a, r) => a + r.km2, 0);
+  lastRows = rows.map(r => [r.st, r.di, r.km2.toFixed(3), (100 * r.km2 * 1e6 / total).toFixed(2)]);
+  $('rows').innerHTML = rows.map((r, n) => {
+    return `<tr><td>${n + 1}</td><td><span class="dot" style="background:${COLORS[(stateIdx.get(r.st) ?? 0) % COLORS.length]}"></span>${r.st}</td><td>${r.di}</td>` +
+      `<td class="n">${r.km2.toFixed(3)}</td><td class="n">${(100 * r.km2 * 1e6 / total).toFixed(2)}</td></tr>`;
+  }).join('');
+  $('foot').innerHTML = `<tr><td></td><td colspan="2">Total (inside India)</td><td class="n">${inside.toFixed(3)}</td><td class="n"></td></tr>`;
+  $('notes').innerHTML = (outside > 0 ? `<b>Note:</b> ${(outside / 1e6).toFixed(3)} sq km of the inundation lies outside the District/State boundaries (sea or neighbouring country) and is not listed. ` : '') +
+    (B > 1 ? `Large TIFF: processed in ${B}x${B} pixel blocks, so areas along boundaries are approximate. ` : '') +
+    'Boundary files are simplified (about 30 m), so areas along District borders are approximate. Please verify the result against the inundation map before using it in the EAP.';
+  $('result').hidden = false;
+
+  showVillages(villages, B);
+
+  // preview
+  const cv = $('map'), g = cv.getContext('2d');
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  pts.forEach(p => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); });
+  const k = Math.cos(((y0 + y1) / 2) * Math.PI / 180), dx = Math.max((x1 - x0) * k, 1e-6), dy = Math.max(y1 - y0, 1e-6);
+  const sc = Math.min(760 / dx, 460 / dy);
+  g.clearRect(0, 0, cv.width, cv.height);
+  pts.forEach(p => {
+    g.fillStyle = p[2] < 0 ? '#999' : COLORS[p[2] % COLORS.length];
+    g.fillRect(20 + (p[0] - x0) * k * sc, 20 + (y1 - p[1]) * sc, 3, 3);
+  });
+}
+
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = n => Math.round(n).toLocaleString('en-IN');
+function showVillages(vl, B) {
+  const card = $('vresult');
+  if (!vl || vl.error) {
+    lastVRows = []; card.hidden = false;
+    $('vsum').innerHTML = ''; $('vrows').innerHTML = '';
+    $('vnotes').innerHTML = '<span class="err">Village results are not available' + (vl && vl.error ? ' (' + esc(vl.error) + ')' : '') + '.</span> Check that the <code>data/villages</code> folder (index.json and the State files) is uploaded next to this page.';
+    return;
+  }
+  const rows = vl.list.map(r => {
+    const v = r.v, d = r.L.d;
+    const ha = r.m2 / 1e4, vha = v.area / 1e4;
+    return { st: d.state, di: d.d[v.di] || '', bl: d.b[v.bi] || '', vn: v.name, vc: v.code, ha,
+             pct: vha > 0 ? Math.min(100, 100 * ha / vha) : null, hh: v.hh, pop: v.pop };
+  });
+  rows.sort((a, b) => a.st.localeCompare(b.st) || a.di.localeCompare(b.di) || b.ha - a.ha);
+  lastVRows = rows;
+  const totalHa = rows.reduce((a, r) => a + r.ha, 0), totPop = rows.reduce((a, r) => a + r.pop, 0), totHH = rows.reduce((a, r) => a + r.hh, 0);
+  $('vsum').innerHTML = `<div><b>${fmt(rows.length)}</b>villages inundated</div>` +
+    `<div><b>${fmt(totalHa)}</b>ha inundated (in villages)</div>` +
+    `<div><b>${fmt(totHH)}</b>households (Census, whole villages)</div>` +
+    `<div><b>${fmt(totPop)}</b>population (Census, whole villages)</div>`;
+  $('vfilter').value = ''; renderVillages();
+  $('vnotes').innerHTML = (vl.outside > 0 ? `<b>Note:</b> ${(vl.outside / 1e4).toFixed(1)} ha of the inundation did not fall inside any village polygon (outside India, outside the loaded States, or a boundary gap) and is not listed. ` : '') +
+    'Households and population are Census figures for the <b>whole village</b>, not the number of people actually affected. ' +
+    'A village is listed if any inundated cell falls inside it; its area is approximate' + (B > 1 ? ` (TIFF processed in ${B}x${B} pixel blocks)` : '') + ', especially for small villages and along boundaries (village boundaries are simplified to about 12 m). ' +
+    'Village names are as in the Survey of India file; "Block / Sub-district" shows the Block, or the Sub-district where no Block is recorded. Please verify against the inundation map before using in the EAP.';
+  card.hidden = false;
+}
+function renderVillages() {
+  const q = $('vfilter').value.trim().toLowerCase();
+  const rows = q ? lastVRows.filter(r => (r.st + ' ' + r.di + ' ' + r.bl + ' ' + r.vn + ' ' + r.vc).toLowerCase().includes(q)) : lastVRows;
+  $('vrows').innerHTML = rows.map((r, n) => `<tr><td>${n + 1}</td><td>${esc(r.st)}</td><td>${esc(r.di)}</td><td>${esc(r.bl)}</td><td>${esc(r.vn)}</td><td>${esc(r.vc)}</td>` +
+    `<td class="n">${r.ha.toFixed(2)}</td><td class="n">${r.pct == null ? '-' : r.pct.toFixed(1)}</td><td class="n">${fmt(r.hh)}</td><td class="n">${fmt(r.pop)}</td></tr>`).join('') ||
+    '<tr><td colspan="10">No villages match.</td></tr>';
+}
+$('vfilter').addEventListener('input', renderVillages);
+$('vcsv').addEventListener('click', () => {
+  const q = s => '"' + String(s).replace(/"/g, '""') + '"';
+  const lines = ['Sr No,State,District,Block / Sub-district,Village,Village Code,Inundated Area (ha),% of Village Area,Households (Census),Population (Census)']
+    .concat(lastVRows.map((r, n) => [n + 1, q(r.st), q(r.di), q(r.bl), q(r.vn), q(r.vc), r.ha.toFixed(2), r.pct == null ? '' : r.pct.toFixed(1), r.hh, r.pop].join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'inundated_villages.csv'; a.click();
+});
+
+async function run(file) {
+  if (!file) return;
+  try {
+    show(await analyse(file));
+    $('status').className = 'ok'; $('status').textContent = 'Done: ' + file.name;
+  } catch (e) {
+    $('status').className = 'err'; $('status').textContent = e.message || String(e);
+    if (/Failed to fetch|NetworkError/.test(e.message || '')) $('status').textContent = 'Could not load the State boundary file. If you opened this page directly from a folder, host it on GitHub Pages or run a local web server.';
+  }
+  setTimeout(() => $('barwrap').hidden = true, 800);
+}
+
+$('tif').addEventListener('change', e => run(e.target.files[0]));
+const drop = $('drop');
+['dragover', 'dragenter'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => run(e.dataTransfer.files[0]));
+$('csv').addEventListener('click', () => {
+  const lines = ['Sr No,State,District,Inundated Area (sq km),Share of Total (%)']
+    .concat(lastRows.map((r, n) => `${n + 1},"${r[0]}","${r[1]}",${r[2]},${r[3]}`));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv' }));
+  a.download = 'submerged_states_districts.csv'; a.click();
+});
+loadLayers().catch(() => {});   // pre-load boundaries in the background
+</script>
+</body>
+</html>
